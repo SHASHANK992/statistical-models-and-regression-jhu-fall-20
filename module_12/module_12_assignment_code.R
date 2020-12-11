@@ -1,0 +1,185 @@
+### Problem 1
+df <- MPV::p13.2
+n <- 15
+set.seed(1); chosen_rows <- sort(sample(seq(1, nrow(df)), n))
+df <- df[chosen_rows,]
+
+# part a
+df_fit <- glm(formula = y~x, family = binomial(), data = df)
+
+# part b
+# Reference: https://stats.stackexchange.com/questions/108995/interpreting-residual-and-null-deviance-in-glm-r
+summary(df_fit)
+anova(df_fit, test = 'Chi')
+df_fit$null.deviance - df_fit$deviance > qchisq(p = 0.95, df = 1)
+
+deviance_D <- 2 * 
+  sum(df$y * log(df$y / df_fit$fitted.values),
+      (1 - df$y) * log((1 - df$y) / (1 - df_fit$fitted.values)),
+      na.rm = TRUE)
+deviance_D > qchisq(p = 0.95, df = n - 2)
+deviance_D / (n - 2)
+
+# part d
+df$x2 <- df$x^2
+df_fit2 <- glm(formula = y ~ x + x2, family = binomial(), data = df)
+summary(df_fit2)
+anova(df_fit2, test = 'Chi')
+df_fit2$null.deviance - df_fit2$deviance >
+  qchisq(p = 0.95, df = df_fit2$df.null - df_fit2$df.residual)
+deviance_D <- 2 * 
+  sum(df$y * log(df$y / df_fit2$fitted.values),
+      (1 - df$y) * log((1 - df$y) / (1 - df_fit2$fitted.values)),
+      na.rm = TRUE)
+deviance_D > qchisq(p = 0.95, df = n - 3)
+deviance_D / (n - 3)
+
+### Problem 2
+df <- MPV::p13.4
+n <- 9
+set.seed(1); chosen_rows <- sort(sample(seq(1, nrow(df)), n))
+df <- df[chosen_rows,]
+df$y <- df$r / df$n
+
+# part a
+df_fit <- glm(formula = y~x, family = binomial(), data = df)
+
+# part b
+summary(df_fit)
+anova(df_fit, test = 'Chi')
+df_fit$null.deviance - df_fit$deviance > qchisq(p = 0.95, df = 1)
+
+deviance_D <- 2 * 
+  sum(df$y * log(df$y / df_fit$fitted.values),
+      (1 - df$y) * log((1 - df$y) / (1 - df_fit$fitted.values)),
+      na.rm = TRUE)
+deviance_D > qchisq(p = 0.95, df = n - 2)
+deviance_D < qchisq(p = 0.95, df = n - 2, lower.tail = FALSE)
+deviance_D / (n - 2)
+
+# part c
+plot(df$x, df_fit$fitted.values, ylim = c(0,1), pch = 3,
+     main = 'Fitted and True Values against X',
+     xlab = 'x', ylab = 'y, y-hat')
+points(df$x, df$y, pch=2)
+legend("right", legend = c('Fitted Values', 'True Values'),
+       pch = c(3,2))
+
+# part d
+df$x2 <- df$x^2
+df_fit2 <- glm(formula = y ~ x + x2, family = binomial(), data = df)
+summary(df_fit2)
+anova(df_fit2, test = 'Chi')
+df_fit2$null.deviance - df_fit2$deviance >
+  qchisq(p = 0.95, df = df_fit2$df.null - df_fit2$df.residual)
+
+deviance_D <- 2 * 
+  sum(df$y * log(df$y / df_fit2$fitted.values),
+      (1 - df$y) * log((1 - df$y) / (1 - df_fit2$fitted.values)),
+      na.rm = TRUE)
+
+deviance_D > qchisq(p = 0.95, df = n - 3)
+deviance_D < qchisq(p = 0.95, df = n - 3, lower.tail = FALSE)
+
+deviance_D / (n - 3)
+
+# part e
+plot(df$x, df_fit$fitted.values, ylim = c(0,1), pch = 3,
+     main = 'Fitted and True Values against X',
+     xlab = 'x', ylab = 'y, y-hat')
+points(df$x, df$y, pch=2, col = 'blue')
+points(df$x, df_fit2$fitted.values, pch=1, col = 'red')
+legend("right", legend = c('Model 1', 'Model 2', 'True Values'),
+       pch = c(3,1,2), col = c('black', 'red', 'blue'))
+
+# part f
+summary(df_fit2)
+std_errors <- sqrt(diag(summary(df_fit2)$cov.unscaled))
+wald_statistics <- df_fit2$coefficients / std_errors
+
+# part g
+round(df_fit2$coefficients + c(1.96 * std_errors),4)
+round(df_fit2$coefficients - c(1.96 * std_errors),4)
+
+### Problem 3
+df <- MPV::p13.7
+n <- 30
+set.seed(1); chosen_rows <- sort(sample(seq(1, nrow(df)), n))
+df <- df[chosen_rows,]
+
+# part a
+df_fit <- glm(formula = y~., family = poisson(), data = df)
+summary(df_fit)
+anova(df_fit)
+
+# part b
+deviance_D <- summary(df_fit)$deviance
+deviance_D > qchisq(p = 0.95, df = n - 5)
+deviance_D / (n - 5)
+
+# part c
+df_fit1 <- glm(formula = y~x2+x3+x4, family = poisson(), data = df)
+df_fit1$deviance - df_fit$deviance > qchisq(p = 0.95, df = 1)
+
+df_fit2 <- glm(formula = y~x1+x3+x4, family = poisson(), data = df)
+df_fit2$deviance - df_fit$deviance > qchisq(p = 0.95, df = 1)
+
+df_fit3 <- glm(formula = y~x1+x2+x4, family = poisson(), data = df)
+df_fit3$deviance - df_fit$deviance > qchisq(p = 0.95, df = 1)
+
+df_fit4 <- glm(formula = y~x1+x2+x3, family = poisson(), data = df)
+df_fit4$deviance - df_fit$deviance > qchisq(p = 0.95, df = 1)
+
+# part d
+summary(df_fit)
+std_errors <- sqrt(diag(summary(df_fit)$cov.unscaled))
+wald_statistics <- df_fit$coefficients / std_errors
+alpha <- 0.05
+abs(round(wald_statistics,4)) > qnorm(p = 1 - alpha / 2)
+
+# part e
+round(df_fit$coefficients + c(qnorm(p = 1 - alpha / 2) * std_errors),4)
+round(df_fit$coefficients - c(qnorm(p = 1 - alpha / 2) * std_errors),4)
+
+### Problem 5
+df <- read.csv('p13_26.csv')
+n <- 10
+set.seed(1); chosen_rows <- sort(sample(seq(1, nrow(df)), n))
+df <- df[chosen_rows,]
+
+# Fit a model
+df_fit <- glm(formula = y~., family = poisson(), data = df)
+summary(df_fit)
+anova(df_fit)
+
+# Calculate the deviance
+deviance_D <- summary(df_fit)$deviance
+deviance_D > qchisq(p = 0.95, df = n - 4)
+deviance_D / (n - 4)
+
+# partial deviance
+df_fit1 <- glm(formula = y~Oil+Time, family = poisson(), data = df)
+df_fit1$deviance - df_fit$deviance > qchisq(p = 0.95, df = 1)
+
+df_fit2 <- glm(formula = y~Temperature+Time, family = poisson(), data = df)
+df_fit2$deviance - df_fit$deviance > qchisq(p = 0.95, df = 1)
+
+df_fit3 <- glm(formula = y~Temperature+Oil, family = poisson(), data = df)
+df_fit3$deviance - df_fit$deviance > qchisq(p = 0.95, df = 1)
+
+# Wald statistics
+summary(df_fit)
+std_errors <- sqrt(diag(summary(df_fit)$cov.unscaled))
+wald_statistics <- df_fit$coefficients / std_errors
+alpha <- 0.05
+abs(round(wald_statistics,4)) > qnorm(p = 1 - alpha / 2)
+
+# Wald CI
+round(df_fit$coefficients + c(qnorm(p = 1 - alpha / 2) * std_errors),4)
+round(df_fit$coefficients - c(qnorm(p = 1 - alpha / 2) * std_errors),4)
+
+
+
+
+
+

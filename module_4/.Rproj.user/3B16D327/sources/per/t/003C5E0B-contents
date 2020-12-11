@@ -1,0 +1,12 @@
+n <- nrow(mtcars)
+x1 <- mtcars[,1]; x2 <- mtcars[,2]
+ones <- rep(1, n)
+y <- ones +  3 * x1 + 0.2 * x2
+X <- cbind(rep(1, n), mtcars[,c(1,2)])
+
+range(X[,2])
+range(X[,3])
+plot(range(X[,2]), range(X[,3]))
+
+plot(X[,c(2,3)], xlim = c(0, 35), ylim = c(0, 10), yaxs = "i")
+plot(rbind(X[,c(2,3)], c(0,0)))

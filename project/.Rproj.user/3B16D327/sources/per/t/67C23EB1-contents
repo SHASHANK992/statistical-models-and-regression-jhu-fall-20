@@ -1,0 +1,359 @@
+library(MASS) # Load libary
+
+### Load data
+df <- MPV::table.b1
+head(df)
+true_col_names <- c('Games won (per 14-game season)',
+  'Rushing yards (season)',
+  'Passing yards (season)',
+  'Punting average (yards/punt)',
+  'Field Goal Percentage (FGs made/FGs attempted)',
+  'Turnover differential (turnovers acquired - turnovers lost)',
+  'Penalty yards (season)',
+  'Percent rushing (rushing plays/total plays)',
+  'Opponents\' rushing yards (season)',
+  'Opponents\' passing yards (season)')
+
+team_names <- c("Washington", "Minnesota", "New England", "Oakland", "Pittsburgh", "Baltimore",
+  "Los Angeles", "Dallas", "Atlanta", "Buffalo", "Chicago", "Cincinnati", "Cleveland",
+  "Denver", "Detroit", "Green Bay", "Houston", "Kansas City", "Miami", "New Orleans",
+  "New York Giants", "New York Jets", "Philadelphia", "St. Louis", "San Diego",
+  "San Francisco", "Seattle", "Tampa Bay")
+
+### Graphical data displays
+x_labels <- c('Games won (per 14-game season)',
+              'Rushing yards (season)',
+              'Passing yards (season)',
+              'Punting average (yards/punt)',
+              'Field Goal Percentage (FGs made/FGs attempted)',
+              'Turnover differential (turnovers acquired - turnovers lost)',
+              'Penalty yards (season)',
+              'Percent rushing (rushing plays/total plays)',
+              'Opponents\' rushing yards (season)',
+              'Opponents\' passing yards (season)')
+var_names <- c('y', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9')
+par(mfrow = c(3,4))
+for (i in 1:ncol(df)) {
+  hist(df[,i], probability = TRUE,
+       main = var_names[i],
+       xlab = x_labels[i])
+  lines(density(df[,i]))
+}
+dev.off()
+
+pairs(df) # pairs matrix
+
+# Reference: https://stackoverflow.com/questions/9439619/replace-all-values-in-a-matrix-0-1-with-0/9439694
+# Reference: https://stackoverflow.com/questions/3192791/find-indices-of-non-zero-elements-in-matrix/3193207
+### correlation matrix
+cor_df <- abs(cor(df))
+# diag(cor_df) <- 0
+cor_df[lower.tri(cor_df)] <- 0
+cor_df <- as.matrix(cor_df)
+cor_df <- ifelse(cor_df < 0.5, 0, cor_df)
+which(cor_df != 0, arr.ind = TRUE)
+# correlation > 0.5
+write.table(round(cor_df, 2), file = 'correlation.txt', sep = ',')
+
+# Reference: https://stackoverflow.com/questions/39731068/how-to-let-a-matrix-minus-vector-by-row-rather-than-by-column
+# Reference: https://stackoverflow.com/questions/3444889/how-to-use-the-sweep-function
+# Reference: http://www.sthda.com/english/articles/39-regression-model-diagnostics/160-multicollinearity-essentials-and-vif-in-r/
+### VIF pp.117-118, pp.296-297 in Textbook
+ones <- rep(1, nrow(df))
+X <- as.matrix(cbind(ones, df[,2:ncol(df)]))
+
+sample_means <- colMeans(X)
+sample_sd <- sqrt(diag(cov(X)))
+X_centered <- sweep(X, 2, sample_means)
+X_standardized <- sweep(X_centered, 2, sample_sd, FUN = "/")
+W <- X_standardized[,2:ncol(X_standardized)]
+
+C <- solve(t(W) %*% W)
+# 1 or more large VIFs indicate multicollinearity
+diag(C) # All VIF's are fairly controlled
+car::vif(model_1) # x1, x7, and x8 are relatively large (around 5)
+
+### Modeling
+# often the variables aren't entirely normal
+# there are limited observations
+# the response seems to have two peaks
+model_0 <- lm(y~1, df)
+model_1 <- lm(y~., df)
+
+# Significance of regression
+# F: 8.8458
+# p-value: 5.303e-05
+anova(model_0, model_1)
+
+# Check contribution of each term
+# most aren't significant (only x2 > 0.05)
+summary(model_1)
+round(summary(model_1)$coefficients[,4], 4)
+
+# BoxCox
+boxcox(df[-28,]$y~., data=df[-28,]) # one response is 0 (28th)
+
+# natural log is not so good
+boxcox(log(df[-28,]$y)~., data=df[-28,])
+
+# 3/4 also works
+boxcox(df[-28,]$y^(3/4)~., data=df[-28,])
+model_2 <- lm(y^(3/4)~., df)
+model_2b <- lm(y^(3/4)~1, df)
+anova(model_2, model_2b)
+summary(model_2) # same issue
+round(summary(model_2)$coefficients[,4], 4)
+
+# forward selection
+forward1 <- MASS::stepAIC(model_0,
+                          scope = list(upper=model_1, lower=model_0),
+                          direction = c('forward'))
+summary(forward1) # lm(formula = y ~ x8 + x2 + x7 + x9, data = df)
+
+# backward elimination
+backward1 <- MASS::stepAIC(model_1, direction = c('backward'))
+summary(backward1) # lm(formula = y ~ x2 + x7 + x8 + x9, data = df)
+
+# stepwise regression
+step1 <- MASS::stepAIC(model_0,
+                       scope = list(upper=model_1, lower=model_0),
+                       direction = c('both'))
+summary(step1) # lm(formula = y ~ x8 + x2 + x7 + x9, data = df)
+
+# all possible regressions
+best1 <- leaps::regsubsets(x = y~., data = df, nvmax = 10)
+best1_sum <- summary(best1)
+p.m <- 2:10
+n <- nrow(df)
+MS_Res <- best1_sum$rss / (n-p.m)
+aic <- n * log(best1_sum$rss / n) + 2 * p.m
+data.frame(
+  adjrsq = which.max(best1_sum$adjr2),
+  rsq = which.max(best1_sum$rsq),
+  CP = which.min(best1_sum$cp),
+  MSRes = which.min(MS_Res),
+  bic = which.min(best1_sum$bic),
+  aic = which.min(aic)
+)
+
+# voted 3: CP, bic
+# voted 4: adjrsq, MSRes, aic
+# 3: x2, x7, x8
+best_1a <- lm(y~x2 + x7 + x8, data = df)
+summary(best_1a)
+round(summary(best_1a)$coefficients[,4],4)
+anova(model_0, best_1a)
+
+# 4: x2, x7, x8, x9
+best_1b <- lm(y~x2 + x7 + x8 + x9, data = df)
+summary(best_1b)
+round(summary(best_1b)$coefficients[,4],4)
+anova(model_0, best_1b)
+
+### Residual analysis
+beta_hat_calc <- function(X, y) {
+  X <- as.matrix(X)
+  beta_hat <- solve(t(X) %*% X) %*% t(X) %*% y
+  return(beta_hat)
+}
+SS_Res_calc <- function(y, beta_hat, X) {
+  SS_Res <- (t(y) %*% y) - (t(beta_hat) %*% t(X) %*% y)
+  return(SS_Res)
+}
+H_calc <- function(X) {
+  X <- as.matrix(X)
+  H <- X %*% solve(t(X) %*% X) %*% t(X)
+  return(H)
+}
+ones <- rep(1, nrow(df))
+
+# residuals
+e <- best_1a$residuals
+
+# standardized residuals
+standardized_res <- sapply(1:n, function(x) e[x] / sqrt(MS_Res))
+
+# studentized residuals
+beta_hat <- best_1a$coefficients
+X <- cbind(ones, df[,c('x2','x7','x8')])
+H <- H_calc(X)
+SS_Res <- SS_Res_calc(y = df$y, beta_hat = beta_hat, X = X)
+p <- ncol(X)
+MS_Res <- SS_Res / (n - p)
+H_diag <- diag(H)
+studentized_residuals <- sapply(1:n, function(x) {
+  e[x] / sqrt(MS_Res * (1 - H_diag[x]))
+})
+
+# PRESS residuals
+PRESS_res <- sapply(1:n, function(x) e[x] / (1 - H_diag[x]))
+
+# R-Student residuals
+S_squared <- sapply(1:n, function(x) {
+  ((n - p) * MS_Res - ((e[x]^2) / (1 - H_diag[x]))) / (n - p - 1)
+})
+
+R_student_res <- sapply(1:n, function(x) {
+  e[x] / sqrt(S_squared[x] * (1 - H_diag[x]))
+})
+
+# residual table
+res_table <- data.frame(
+  Observation = seq(1, n),
+  Residual = e,
+  Standardized_Residuals = standardized_res,
+  Studentized_Residuals = studentized_residuals,
+  R_Student = R_student_res,
+  PRESS = PRESS_res
+)
+res_table <- round(res_table, 4)
+abs(res_table)
+write.table(res_table, file = 'res_table.txt', sep = ',')
+
+norm_prob_plot <- function(residual_var, x_label,
+                           main_title = 'Normal Probability Plot',
+                           y_label = 'Probability', n_size=n) {
+  ones <- rep(1, n)
+  sorted_residuals <- sort(residual_var)
+  cumulative_probability <- (1:n_size - 0.5) / n_size
+  plot(sorted_residuals, cumulative_probability, main = main_title,
+       xlab = x_label,
+       ylab = y_label)
+  X_temp <- cbind(ones, sorted_residuals)
+  beta_hat_temp <- beta_hat_calc(X=X_temp,y=cumulative_probability)
+  abline(beta_hat_temp)
+}
+norm_prob_plot(residual_var = best_1a$residuals, x_label = 'Sorted Residuals')
+
+order(e, decreasing = FALSE)
+e[order(e, decreasing = FALSE)]
+
+# res vs fitted
+y_hat <- best_1a$fitted.values
+res_vs_fitted_plot <- function(residual_var,
+                               main_title,
+                               y_label,
+                               x_label = 'Predicted Response',
+                               pred_response = y_hat) {
+  plot(pred_response, residual_var, main = main_title,
+       xlab = x_label,
+       ylab = y_label,
+       ylim = c(min(residual_var)-sd(residual_var),
+                max(residual_var)+sd(residual_var)))
+}
+par(mfrow = c(2,2))
+res_vs_fitted_plot(residual_var = e,
+                   main_title = 'Residuals vs. Predicted Response',
+                   y_label = 'Residuals')
+res_vs_fitted_plot(residual_var = studentized_residuals,
+                   main_title = 'Studentized Residuals vs. Predicted Response',
+                   y_label = 'Studentized Residuals')
+res_vs_fitted_plot(residual_var = R_student_res,
+                   main_title = 'R-student vs. Predicted Response',
+                   y_label = 'R-student')
+res_vs_fitted_plot(residual_var = PRESS_res,
+                   main_title = 'PRESS Residuals vs. Predicted Response',
+                   y_label = 'PRESS Residuals')
+
+# res vs regressor
+# R-student
+res_vs_regressor <- function(residual_var,
+                             main_title1, main_title2, main_title3,
+                             ylabel,
+                             X_df=X) {
+  x2 <- X_df[,2]; x7 <- X_df[,3]; x8 <- X_df[,4]
+  plot(x2, residual_var,
+       main = main_title1,
+       ylab = ylabel,
+       xlab = col_names[2])
+  abline(h = 0)
+  
+  plot(x7, residual_var,
+       main = main_title2,
+       ylab = ylabel,
+       xlab = col_names[7])
+  abline(h = 0)
+  
+  plot(x8, residual_var,
+       main = main_title2,
+       ylab = ylabel,
+       xlab = col_names[8])
+  abline(h = 0)
+}
+
+par(mfrow = c(2,2))
+res_vs_regressor(residual_var = R_student_res,
+                 main_title1 = 'R-Student Residuals vs. x2',
+                 main_title2 = 'R-Student Residuals vs. x7',
+                 main_title3 = 'R-Student Residuals vs. x8',
+                 ylabel = 'R-Student Residuals',
+                 X_df = X)
+par(mfrow = c(2,2))
+plot(df$x2, df$y,
+     main = 'y vs x2',
+     xlab = 'x2', ylab = 'y')
+plot(df$x7, df$y,
+     main = 'y vs x7',
+     xlab = 'x7', ylab = 'y')
+points(43.8, 2, pch = 3, col = 'red')
+plot(df$x8, df$y,
+     main = 'y vs x8',
+     xlab = 'x8', ylab = 'y')
+
+### model validation
+# VIFs
+car::vif(best_1a)
+
+# data splitting
+SS_T_calc <- function(y) {
+  n <- length(y)
+  SS_T <- (t(y) %*% y) - ((sum(y)^2) / n)
+  return(SS_T)
+}
+SS_T <- SS_T_calc(y = df$y)
+PRESS <- sum(PRESS_res^2)
+R_squared_pred <- 1 - PRESS / SS_T
+
+### polynomial
+# Reference: https://www.ics.uci.edu/~jutts/201-F13/Lecture13.pdf
+# Reference: https://stats.stackexchange.com/questions/25975/how-to-add-second-order-terms-into-the-model-in-r/25977
+X_poly <- as.data.frame(cbind(y=df$y, poly(X[,2:ncol(X)], degree = 2)))
+model_6 <- lm(y~., data=X_poly)
+summary(model_6)
+
+### CI's
+X <- as.matrix(X)
+C <- solve(t(X) %*% X)
+SS_Res <- SS_Res_calc(y = df$y, beta_hat = coef(best_1a), X = X)
+sigma_hat_squared <- SS_Res / (n - p)
+
+standard_errors <- sqrt(as.vector(sigma_hat_squared) * diag(C))
+alpha <- 0.05
+t_value <- qt(p = 1 - alpha / 2, df = n - p)
+round(coef(best_1a) + t_value * standard_errors, 4)
+round(coef(best_1a) - t_value * standard_errors, 4)
+apply(X, 2, function(x) c(min(x), max(x)))
+
+### Unit normal scaling
+sample_means <- colMeans(df)
+sample_sd <- sqrt(diag(cov(df)))
+df_centered <- sweep(df, 2, sample_means)
+df_normal_scaled <- sweep(df_centered, 2, sample_sd, FUN = "/")
+
+model_3b <- lm(y~1, data = df_normal_scaled)
+anova(model_3b, model_3)
+model_3 <- lm(y~x2+x7+x8, data = df_normal_scaled)
+round(summary(model_3)$coefficients[,4], 4)
+
+# CI
+X <- df_normal_scaled[,c('x2', 'x7', 'x8')]
+X <- as.matrix(cbind(ones, X))
+C <- solve(t(X) %*% X)
+SS_Res <- SS_Res_calc(y = df_normal_scaled$y, beta_hat = coef(model_3), X = X)
+sigma_hat_squared <- SS_Res / (n - p)
+
+standard_errors <- sqrt(as.vector(sigma_hat_squared) * diag(C))
+alpha <- 0.05
+t_value <- qt(p = 1 - alpha / 2, df = n - p)
+round(coef(model_3) + t_value * standard_errors, 4)
+round(coef(model_3) - t_value * standard_errors, 4)
